@@ -1,0 +1,171 @@
+<html>
+<head>
+<title>mpstat - web browser view</title>
+<script src="mpstat_init.js"></script>
+<script src="flot/jquery.js"></script>
+<script src="flot/jquery.flot.js"></script>
+<script type="text/javascript">
+
+const STAT_SERVER = "localhost";
+const SERVER_PORT = 8000;
+
+var stat_server = STAT_SERVER;
+var server_port = SERVER_PORT;
+
+var mpstat = mpstat_init();
+
+var graph_data = [];
+var running;
+var plot;
+
+function init_graph_data(num_cpus) {
+        for (var i = 0; i < num_cpus; i++) {
+                if (graph_data.length <= i) {
+                        graph_data.push([]);
+                }
+                for (var j = 0; j < 60; j++) {
+                        if (graph_data[i].length >= j) {
+                                graph_data[i][j] = 0;
+                        } else {
+                                graph_data[i].push(0);
+                        }
+                }
+        }
+}
+
+init_graph_data(16);
+
+function pullKstats() {
+        var url = 'http://' + stat_server + ':' + server_port +
+                  '/kstats/cpu/*/sys;vm';
+        $.getJSON(url, null, function (response) {
+                mpstat.update_kstats(response);
+                var lines = mpstat.get_txt_output();
+                var result_obj = mpstat.get_obj_output();
+                if ((result_obj) && (result_obj.length > 0)) {
+                        $.each(result_obj, function (i,value) {
+                                graph_data[i].shift();
+                                graph_data[i].push(100 - value["idl"]);
+                        });
+
+                        update_graph();
+                        if (lines !== null) {
+                                var tmp_array = plot.getData();
+                                var color_array= [];
+                                $.each(tmp_array, function (i,value) {
+                                        color_array.push(value.color);
+                                });
+
+                                var lines_array = lines.split("\n");
+
+                                //output header before we start coloring
+                                $('div#command_output')
+                                .append(lines_array.shift() + '\n');
+
+                                $.each(lines_array, function (i,value) {
+                                        $('div#command_output').append(
+                                                '<font color="' + color_array[i] +
+                                                '">' + value + '</font>\n'
+                                        );
+                                });
+
+                                $('div#command_output')
+                                .scrollTop($('div#command_output')[0].scrollHeight);
+                        }
+                }
+        });
+}
+
+//Stuff for drawing the graph using JQuery + flot
+var graph_options = {
+        series: { shadowSize: 0 },
+        yaxis: { min: 0, max: 100 },
+        xaxis: { show: false }
+};
+
+function get_graph_series() {
+        var series = [];
+        for (var i = 0; i < graph_data.length; i++) {
+                series.push([]);
+                for (var j = 0; j < graph_data[i].length; j++) {
+                        series[i].push([j, graph_data[i][j]]);
+                }
+        }
+
+        return series;
+}
+
+function update_graph() {
+        plot.setData(get_graph_series());
+        plot.draw();
+}
+
+//On DOM ready
+$(function() {
+        $("#start").click(function () {
+                if (!mpstat) {
+                        mpstat = mpstat_init();
+                }
+                running = setInterval(pullKstats, 1000);
+                return false;
+        });
+
+        $("#stop").click(function () {
+                if (running) {
+                        clearInterval(running);
+                }
+
+                running = null;
+
+                //wipe out previous data so we do not report bogus numbers next time
+                if (mpstat) {
+                        mpstat = null;
+                }
+                return false;
+        });
+
+        $("#clear").click(function () {
+                $("#command_output").text = '';
+                zero_graph();
+                plot.draw();
+                return false;
+        });
+
+        $("#server")[0].value = stat_server;
+        $("#port")[0].value = server_port;
+
+        $("#server").change(function () {
+                stat_server = $("#server")[0].value;
+        });
+        
+        $("#port").change(function() {
+                stat_server = $("#port")[0].value;
+        });
+
+        plot = $.plot($("#graph_area"),
+            get_graph_series(), graph_options);
+
+        plot.draw();
+});
+</script>
+</head>
+<body>
+<h2>Monitor CPU statistics remotely</h2>
+<form id="controller">
+host to monitor:<input id="server">
+port:<input id="port"><br>
+<i>host must be running node web service that provides access to kstats via REST API,
+as described <a href="http://blog.harschsystems.com/uncategorized/remote-cpu-monitoring-using-node-kstat/">here</a>.</i>
+<hr>
+<input id="start" type="submit" value="Start">
+<input id="stop" type="submit" value="Stop">
+<input id="clear" type="submit" value="Clear">
+</form>
+<div id="graph_area" style="width: 630px; height: 300px"></div>
+<h3>mpstat output:</h3>
+<pre>
+<div id="command_output" style="width:630px;height:550px;overflow:auto;">
+</div>
+</pre>
+</body>
+</html>

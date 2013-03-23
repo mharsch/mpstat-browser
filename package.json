@@ -1,0 +1,7 @@
+{
+	"name": "mpstat-browser",
+	"description": "mpstat(1) output displayed graphically in the browser",
+	"version": "0.0.1",
+	"private": true,
+	"dependencies": { "express": "3.1", "kstat": ">=0.3.0" }
+}
